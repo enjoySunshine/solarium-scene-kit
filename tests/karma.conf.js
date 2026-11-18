@@ -1,0 +1,108 @@
+// Karma configuration.
+var path = require('path');
+var glob = require('glob');
+var webpack = require('webpack');
+var webpackConfiguration = require('../webpack.common.cjs');
+
+// Define test files.
+var FILES = [
+  // Serve test assets.
+  'tests/__init.test.js',
+  {pattern: 'tests/assets/**/*', included: false, served: true},
+  // CSP host page + the built A-Frame bundle it loads, used by
+  // tests/csp/no-unsafe-eval.test.js. The bundle must be the non-instrumented
+  // dist build (CI rebuilds it via `npm run dist` before tests): the in-memory
+  // karma-webpack bundle is istanbul-instrumented under TEST_ENV=ci, and that
+  // instrumentation itself uses new Function(), which would trip the test.
+  {pattern: 'tests/csp/csp-host.html', included: false, served: true, watched: true},
+  {pattern: 'dist/aframe-master.js', included: false, served: true, watched: false}
+];
+if (process.env.TEST_FILE) {
+  glob.sync('tests/**/*.test.js').forEach(function (filename) {
+    if (filename.toLowerCase().indexOf(process.env.TEST_FILE.toLowerCase()) !== -1) {
+      FILES.push(filename);
+    }
+  });
+} else {
+// This global pattern produces some test failures
+//  FILES.push('tests/**/*.test.js');
+// Using a pattern for each folder will change the tests execution order and
+// all tests pass...
+  var excluded_folders = ['assets', 'coverage', 'node'];
+  glob.sync('tests/*/').forEach(function (dirname) {
+    if (excluded_folders.indexOf(dirname) !== -1) return;
+    FILES.push(dirname + '**/*.test.js');
+  });
+}
+
+// add 'src' to be able to resolve require('utils/tracked-controls') for
+// example in the tests
+if (!webpackConfiguration.resolve) {
+  webpackConfiguration.resolve = {};
+}
+webpackConfiguration.resolve.modules = [path.resolve(__dirname, '../src'), 'node_modules'];
+// webpack will create a lot of files, use build directory instead of dist
+webpackConfiguration.output = {
+  library: {
+    name: 'AFRAME',
+    type: 'var',
+    export: 'default'
+  },
+  libraryTarget: 'umd',
+  path: path.resolve(__dirname, '../build'),
+  publicPath: '/dist/',
+  filename: 'aframe-master.js'
+};
+webpackConfiguration.mode = 'development';
+
+var karmaConf = {
+  basePath: '../',
+  webpack: webpackConfiguration,
+  browsers: ['Firefox', 'Chrome'],
+  customLaunchers: {
+    ChromeTravis: {
+      base: 'Chrome',
+      flags: ['--no-sandbox']
+    }
+  },
+  client: {
+    captureConsole: true,
+    mocha: {ui: 'tdd', timeout: 3000}
+  },
+  envPreprocessor: [
+    'TEST_ENV'
+  ],
+  files: FILES,
+  frameworks: ['mocha', 'sinon-chai', 'chai-shallow-deep-equal', 'webpack'],
+  preprocessors: {
+    'tests/**/*.js': ['webpack', 'env']
+  },
+  reporters: ['mocha']
+};
+
+// Configuration for code coverage reporting.
+if (process.env.TEST_ENV === 'ci') {
+  // modify the babel-loader rule
+  karmaConf.webpack.module.rules[0].use.options = {
+    plugins: [['istanbul', { 'exclude': ['**/node_modules/**', '**/tests/**', '**/vendor/**', '**/*.css'] }]]
+  };
+  karmaConf.coverageReporter = {
+    dir: 'tests/coverage',
+    includeAllSources: true,
+    reporters: [
+      {'type': 'html', subdir: 'report'},
+      {'type': 'lcov', subdir: '.'}
+    ]
+  };
+  karmaConf.reporters.push('coverage');
+  karmaConf.browsers = ['Firefox', 'ChromeTravis'];
+}
+
+if (process.env.NO_BROWSER) {
+  delete karmaConf.browsers;
+}
+
+// Apply configuration.
+module.exports = function (config) {
+  config.set(karmaConf);
+};
