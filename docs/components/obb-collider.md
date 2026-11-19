@@ -13,6 +13,8 @@ Collision system using Oriented Bounding Boxes based on [`THREE.OBB`][obb].
 
 It checks collision across all entities with the obb-collider component. It emits events when bounding boxes start and stop intersecting.
 
+The collider is centered on the bounding box of the tracked object's geometry, so a mesh offset from its entity origin is still fully enclosed. When `size` is set the box is centered on the entity origin.
+
 ## Example
 
 ```html
@@ -39,6 +41,6 @@ Set `showColliders` to `true` on the scene to render colliders for debugging pur
 
 | Event Name          | Description                                                                                 |
 | ----------          | ------------------------------------------------------------------------------------------- |
-| obbcollisionstarted | Emitted on the entities that start colliding. Event detail will contain `withEl` referencing the entity that has collided with.                            |
-| obbcollisionended   | Emitted on the entities that stop colliding. Event detail will contain `withEl` referencing the entity that was colliding with                                                |
+| obbcollisionstarted | Emitted on the entities that start colliding. Event detail will contain `withEl` referencing the entity that has collided with and `trackedObject3D` referencing the tracked object.                            |
+| obbcollisionended   | Emitted on the entities that stop colliding. Event detail will contain `withEl` referencing the entity that was colliding with and the same `trackedObject3D` sent on `obbcollisionstarted`.                                                |
 

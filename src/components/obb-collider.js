@@ -16,6 +16,8 @@ registerComponent('obb-collider', {
 
     this.boundingBox = new THREE.Box3();
     this.boundingBoxSize = new THREE.Vector3();
+    // Center of the bounding box in the tracked object's local space.
+    this.localCenter = new THREE.Vector3();
     this.updateCollider = this.updateCollider.bind(this);
 
     this.onModelLoaded = this.onModelLoaded.bind(this);
@@ -73,6 +75,7 @@ registerComponent('obb-collider', {
 
     this.updateBoundingBox();
     aabb.halfSize.copy(boundingBoxSize).multiplyScalar(0.5);
+    aabb.center.copy(this.localCenter);
 
     if (this.el.sceneEl.systems['obb-collider'].data.showColliders) {
       this.showCollider();
@@ -123,6 +126,8 @@ registerComponent('obb-collider', {
     var auxQuaternion = new THREE.Quaternion();
     var identityQuaternion = new THREE.Quaternion();
     var auxMatrix = new THREE.Matrix4();
+    var auxTrackedMatrix = new THREE.Matrix4();
+    var auxCenter = new THREE.Vector3();
 
     return function () {
       var auxEuler = this.auxEuler;
@@ -137,6 +142,8 @@ registerComponent('obb-collider', {
         this.boundingBoxSize.x = size;
         this.boundingBoxSize.y = size;
         this.boundingBoxSize.z = size;
+        // User defined box is centered on the entity origin.
+        this.localCenter.set(0, 0, 0);
         return;
       }
 
@@ -152,9 +159,22 @@ registerComponent('obb-collider', {
       auxMatrix.compose(auxPosition, identityQuaternion, auxScale);
       trackedObject3D.parent.matrixWorld.copy(auxMatrix);
 
+      // Store the transform used to compute the box so the center can be
+      // converted back to the tracked object's local space.
+      trackedObject3D.updateWorldMatrix(false, false);
+      auxTrackedMatrix.copy(trackedObject3D.matrixWorld);
+
       // Calculate bounding box size.
       boundingBox.setFromObject(trackedObject3D, true);
       boundingBox.getSize(boundingBoxSize);
+
+      // The collider is centered on the geometry, not on the tracked object origin.
+      if (boundingBox.isEmpty()) {
+        this.localCenter.set(0, 0, 0);
+      } else {
+        boundingBox.getCenter(auxCenter);
+        this.localCenter.copy(auxCenter).applyMatrix4(auxTrackedMatrix.invert());
+      }
 
       // Enforce minimum dimensions.
       boundingBoxSize.x = boundingBoxSize.x < minimumColliderDimension ? minimumColliderDimension : boundingBoxSize.x;
@@ -164,6 +184,8 @@ registerComponent('obb-collider', {
       // Restore rotations.
       trackedObject3D.parent.matrixWorld.compose(auxPosition, auxQuaternion, auxScale);
       trackedObject3D.rotation.copy(auxEuler);
+      // Refresh the world matrix with the restored transforms.
+      trackedObject3D.updateWorldMatrix(true, false);
     };
   })(),
 
@@ -192,6 +214,9 @@ registerComponent('obb-collider', {
     var auxScale = new THREE.Vector3();
     var auxQuaternion = new THREE.Quaternion();
     var auxMatrix = new THREE.Matrix4();
+    var auxMeshMatrix = new THREE.Matrix4();
+    var auxCenter = new THREE.Vector3();
+    var identityScale = new THREE.Vector3(1, 1, 1);
 
     return function () {
       var obb = this.obb;
@@ -201,7 +226,8 @@ registerComponent('obb-collider', {
       if (!trackedObject3D) { return; }
 
       trackedObject3D.updateMatrix();
-      trackedObject3D.updateMatrixWorld(true);
+      // Make sure ancestors are up to date, not only descendants.
+      trackedObject3D.updateWorldMatrix(true, false);
       trackedObject3D.matrixWorld.decompose(auxPosition, auxQuaternion, auxScale);
 
       // Recalculate collider if scale has changed.
@@ -213,14 +239,24 @@ registerComponent('obb-collider', {
 
       this.previousScale.copy(auxScale);
 
-      // reset scale, keep position and rotation
-      auxScale.set(1, 1, 1);
-      auxMatrix.compose(auxPosition, auxQuaternion, auxScale);
+      // World position of the collider center. The local center is stored in the
+      // tracked object's space, so apply scale, rotation and translation.
+      auxCenter.copy(this.localCenter).multiply(auxScale).applyQuaternion(auxQuaternion).add(auxPosition);
+
+      // Reset scale, keep position and rotation.
+      auxMatrix.compose(auxPosition, auxQuaternion, identityScale);
       // Update OBB visual representation.
-      if (renderColliderMesh) { renderColliderMesh.matrixWorld.copy(auxMatrix); }
+      if (renderColliderMesh) {
+        auxMeshMatrix.compose(auxCenter, auxQuaternion, identityScale);
+        renderColliderMesh.matrixWorld.copy(auxMeshMatrix);
+      }
 
       // Reset OBB with AABB and apply entity matrix. applyMatrix4 changes OBB internal state.
       obb.copy(this.aabb);
+      // aabb.center is in the tracked object's local space. applyMatrix4 does not
+      // rotate the center, so scale and rotate it manually and let the matrix add
+      // the world position. The half size already includes the scale.
+      obb.center.copy(this.localCenter).multiply(auxScale).applyQuaternion(auxQuaternion);
       obb.applyMatrix4(auxMatrix);
     };
   })()

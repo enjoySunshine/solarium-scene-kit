@@ -78,10 +78,10 @@ registerSystem('obb-collider', {
         collisionMeshB = componentB.renderColliderMesh;
 
         if (collisionMeshA) { collisionMeshA.material.color.set(0x00ff00); }
-        componentA.el.emit('obbcollisionended', {trackedObject3D: this.trackedObject3D, withEl: componentB.el});
+        componentA.el.emit('obbcollisionended', {trackedObject3D: componentA.trackedObject3D, withEl: componentB.el});
 
         if (collisionMeshB) { collisionMeshB.material.color.set(0x00ff00); }
-        componentB.el.emit('obbcollisionended', {trackedObject3D: this.trackedObject3D, withEl: componentA.el});
+        componentB.el.emit('obbcollisionended', {trackedObject3D: componentB.trackedObject3D, withEl: componentA.el});
       } else {
         detectedCollisions.push(collisions[i]);
       }
